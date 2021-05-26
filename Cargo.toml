@@ -1,0 +1,10 @@
+[package]
+name = "tw-econ"
+version = "0.1.0"
+authors = ["Vlad <gerdoexx@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+sscanf = "0.1.1"
+chrono = "0.4.19"
+structopt = "0.3.21"
