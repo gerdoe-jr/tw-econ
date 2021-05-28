@@ -11,17 +11,47 @@ pub struct EconMessage {
     timestamp: NaiveTime,
     category: String,
     content: String,
-    raw: String
 }
 
 impl EconMessage {
-    pub fn new() -> Self {
-        EconMessage {
-            timestamp: NaiveTime::from_hms(0, 0, 0),
-            category: String::from("empty"),
-            content: String::from("empty"),
-            raw: String::from("empty")
+    pub fn from_string(msg: String) -> Option<Self> {
+        let mut emsg: Option<Self> = None;
+
+        if let Some((utc, ctg, cnt)) = sscanf::scanf!(msg.clone(), "[{}][{}]: {}", String, String, String) {
+            emsg = Some(EconMessage {
+                timestamp: NaiveTime::parse_from_str(&utc, "%H:%M:%S").unwrap(),
+                category: ctg,
+                content: cnt,
+            });
         }
+
+        emsg
+    }
+
+    pub fn from_string_with_current_time(msg: String) -> Option<Self> {
+        let mut emsg: Option<Self> = None;
+        let now = Utc::now();
+
+        if let Some((ctg, cnt)) = sscanf::scanf!(msg.clone(), "[{}]: {}", String, String) {
+            emsg = Some(EconMessage {
+                timestamp: NaiveTime::from_hms(now.hour(), now.minute(), now.second()),
+                category: ctg,
+                content: cnt,
+            });
+        }
+
+        emsg
+    }
+
+    pub fn to_string(&self) -> String {
+        format!("[{}][{}]: {}", self.timestamp, self.category, self.content)
+    }
+
+    // requires good stable runtime-formatter
+    // wish i will find it
+    // or do it myself...
+    pub fn to_string_fmt(&self, format: String) -> String {
+        unimplemented!();
     }
 
     pub fn get_timestamp(&self) -> NaiveTime {
@@ -34,10 +64,6 @@ impl EconMessage {
 
     pub fn get_content(&self) -> String {
         self.content.clone()
-    }
-
-    pub fn get_raw(&self) -> String {
-        self.raw.clone()
     }
 }
 
@@ -67,7 +93,6 @@ impl EconConnection {
                         found = std::str::from_utf8(&buffer).unwrap().contains("Enter password:");
                     }
                     
-                    thread::sleep(std::time::Duration::new(1, 0));
                     s.write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
 
                     let now = Utc::now();
@@ -75,9 +100,11 @@ impl EconConnection {
                         timestamp: NaiveTime::from_hms(now.hour(), now.minute(), now.second()),
                         category: String::from("tw-econ"),
                         content: format!("Connected to '{}'", addr),
-                        raw: format!("[tw-econ]: Connected to '{}'", addr)
                     };
+
                     tx.send(msg).expect(&format!("Can't write streambuffer for address: {:}", addr));
+
+                    s.set_nonblocking(true).expect(&format!("Can't set non-block read for address: {:}", addr));
 
                     s
                 },
@@ -85,41 +112,34 @@ impl EconConnection {
             };
 
             loop {
-                if let Ok(received) = srx.try_recv() {
-                    let mut received = received.into_bytes().into_boxed_slice();
-                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
-                }
-
                 let mut buffer: [u8; 1024] = [0; 1024];
 
-                stream.read(&mut buffer).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                match stream.read(&mut buffer) {
+                    Ok(_) => {},
+                    Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
+                    Err(_) => {}
+                };
 
                 match std::str::from_utf8(&buffer).unwrap() {
                     words => {
                         for word in words.to_string().split('\n') {
                             let mut msg: Option<EconMessage> = None;
 
-                            match sscanf::scanf!(word.clone(), "[{}][{}]: {}", String, String, String) {
-                                Some((utc, ctg, cnt)) => {
-                                    msg = Some(EconMessage {
-                                        timestamp: NaiveTime::parse_from_str(&utc, "%H:%M:%S").unwrap(),
-                                        category: ctg,
-                                        content: cnt,
-                                        raw: String::from(word)
-                                    }); 
-                                },
-                                _ => {
-                                    if !word.is_empty() {
-                                        let now = Utc::now();
-                                        let now = NaiveTime::from_hms(now.hour(), now.minute(), now.second());
-                                        msg = Some(EconMessage {
-                                            timestamp: now,
-                                            category: String::from("tw-econ"),
-                                            content: String::from(word),
-                                            raw: format!("[{}][tw-econ]: {}", now, word)
-                                        });
-                                    }
-                                }
+                            if let Some((utc, ctg, cnt)) = sscanf::scanf!(word, "[{}][{}]: {}", String, String, String) {
+                                msg = Some(EconMessage {
+                                    timestamp: NaiveTime::parse_from_str(&utc, "%H:%M:%S").unwrap(),
+                                    category: ctg,
+                                    content: cnt,
+                                });
+                            }
+                            else if !word.replace("\u{0}", "").is_empty() {
+                                let now = Utc::now();
+                                let now = NaiveTime::from_hms(now.hour(), now.minute(), now.second());
+                                msg = Some(EconMessage {
+                                    timestamp: now,
+                                    category: String::from("tw-econ"),
+                                    content: word.to_string(),
+                                });
                             }
 
                             if let Some(m) = msg {
@@ -127,6 +147,11 @@ impl EconConnection {
                             }
                         }
                     }
+                }
+
+                if let Ok(received) = srx.try_recv() {
+                    let mut received = received.into_bytes().into_boxed_slice();
+                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
                 }
             }
         });
@@ -141,15 +166,9 @@ impl EconConnection {
     }
 
     pub fn disconnect(&mut self) {
-        let now = chrono::Utc::now();
-        let now = NaiveTime::from_hms(now.hour(), now.minute(), now.second());
-        let disconnected = EconMessage {
-            timestamp: now,
-            category: String::from("tw-econ"),
-            content: format!("Disconnected from '{}'", self.address),
-            raw: format!("[{}][tw-econ]: Disconnected from '{}'", now, self.address)
-        };
-        self.messages.push(disconnected);
+        // drop connection somehow
+        unimplemented!();
+        // self.messages.push(EconMessage::from_string_with_current_time(format!("[tw-econ]: Disconnected from '{}'", self.address)).unwrap());
     }
 
     pub fn update(&mut self) {

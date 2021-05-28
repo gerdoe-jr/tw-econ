@@ -1,7 +1,6 @@
 mod econ_connection;
 
 use structopt::StructOpt;
-use std::io::{self, Read};
 use std::sync::mpsc::{self, Receiver};
 
 
@@ -37,7 +36,7 @@ fn spawn_stdin_channel() -> Receiver<String> {
     std::thread::spawn(move || loop {
         let mut buffer = String::new();
 
-        io::stdin().read_line(&mut buffer).unwrap();
+        std::io::stdin().read_line(&mut buffer).unwrap();
 
         tx.send(buffer).unwrap();
     });
