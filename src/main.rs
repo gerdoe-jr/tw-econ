@@ -18,7 +18,7 @@ fn main() {
     let mut conn = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password);
     
     loop {
-        if let Ok(msg) = conn.next() {
+        if let Ok(msg) = conn.recv() {
             println!("{} : {} ::: {}", msg.get_timestamp(), msg.get_category(), msg.get_content());
         }
 

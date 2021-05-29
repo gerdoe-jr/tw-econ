@@ -75,17 +75,19 @@ impl EconMessage {
 pub struct EconConnection {
     thread: thread::JoinHandle<bool>,
     address: std::net::SocketAddr,
-    tx: Sender<String>,
+    stx: Sender<String>,
     rx: Receiver<EconMessage>,
-    messages: Vec<EconMessage>
+    tx: Sender<EconMessage>,
 }
 
 impl EconConnection {
     pub fn connect(address: std::net::SocketAddr, password: String) -> Self {
         let (tx, rx): (Sender<EconMessage>, Receiver<EconMessage>) = mpsc::channel();
+        let sup_tx = tx.clone();
         let (stx, srx): (Sender<String>, Receiver<String>) = mpsc::channel();
         
         let t = thread::spawn(move || {
+            let tx = tx.clone();
             let addr = address.clone();
             let mut password = password; password.push('\n');
             let mut stream = match TcpStream::connect(addr) {
@@ -159,26 +161,22 @@ impl EconConnection {
         EconConnection {
             thread: t,
             address: address,
-            tx: stx,
+            stx,
+            tx: sup_tx,
             rx,
-            messages: Vec::new()
         }
     }
 
     pub fn disconnect(&mut self) {
-        self.tx.send(String::from(":disconnect!"));
-        self.messages.push(EconMessage::from_string_with_current_time(format!("[tw-econ]: Disconnected from '{}'", self.address)));
+        let _ = self.stx.send(String::from(":disconnect!"));
+        let _ = self.tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from '{}'", self.address)));
     }
 
-    pub fn next(&self) -> Result<EconMessage, mpsc::TryRecvError> {
+    pub fn recv(&self) -> Result<EconMessage, mpsc::TryRecvError> {
         self.rx.try_recv()
     }
 
     pub fn send(&self, command: String) {
-        self.tx.send(command).expect(&format!("Can't send streambuffer for address: {:}", self.address));
-    }
-
-    pub fn get_messages(&mut self) -> &mut Vec<EconMessage> {
-        &mut self.messages
+        self.stx.send(command).expect(&format!("Can't send streambuffer for address: {:}", self.address));
     }
 }
