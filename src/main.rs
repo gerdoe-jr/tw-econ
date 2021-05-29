@@ -1,4 +1,4 @@
-mod econ_connection;
+mod lib;
 
 use structopt::StructOpt;
 use std::sync::mpsc::{self, Receiver};
@@ -15,7 +15,7 @@ struct Arguments {
 fn main() {
     let args = Arguments::from_args();
     let stdin = spawn_stdin_channel();
-    let mut conn = econ_connection::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password);
+    let mut conn = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password);
     
     loop {
         conn.update();
