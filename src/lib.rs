@@ -73,21 +73,19 @@ impl EconMessage {
 }
 
 pub struct EconConnection {
-    thread: thread::JoinHandle<bool>,
     address: std::net::SocketAddr,
     stx: Sender<String>,
     rx: Receiver<EconMessage>,
-    tx: Sender<EconMessage>,
+    //tx: Sender<EconMessage>,
 }
 
 impl EconConnection {
     pub fn connect(address: std::net::SocketAddr, password: String) -> Self {
         let (tx, rx): (Sender<EconMessage>, Receiver<EconMessage>) = mpsc::channel();
-        let sup_tx = tx.clone();
+        //let sup_tx = tx.clone();
         let (stx, srx): (Sender<String>, Receiver<String>) = mpsc::channel();
         
         let t = thread::spawn(move || {
-            let tx = tx.clone();
             let addr = address.clone();
             let mut password = password; password.push('\n');
             let mut stream = match TcpStream::connect(addr) {
@@ -109,7 +107,11 @@ impl EconConnection {
 
                     s
                 },
-                _ => { panic!("pizdec!"); }
+                _ => {
+                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Can't connect to '{}'", addr));
+                    tx.send(msg).expect(&format!("Can't write streambuffer for address: {:}", addr));
+                    return false;
+                }
             };
 
             loop {
@@ -159,24 +161,23 @@ impl EconConnection {
         });
 
         EconConnection {
-            thread: t,
             address: address,
             stx,
-            tx: sup_tx,
+            //tx: sup_tx,
             rx,
         }
     }
 
     pub fn disconnect(&mut self) {
         let _ = self.stx.send(String::from(":disconnect!"));
-        let _ = self.tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from '{}'", self.address)));
+        //let _ = self.tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from '{}'", self.address)));
     }
 
     pub fn recv(&self) -> Result<EconMessage, mpsc::TryRecvError> {
         self.rx.try_recv()
     }
 
-    pub fn send(&self, command: String) {
-        self.stx.send(command).expect(&format!("Can't send streambuffer for address: {:}", self.address));
+    pub fn send(&self, command: String) -> Result<(), mpsc::SendError<String>> {
+        self.stx.send(command)
     }
 }

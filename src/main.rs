@@ -15,7 +15,7 @@ struct Arguments {
 fn main() {
     let args = Arguments::from_args();
     let stdin = spawn_stdin_channel();
-    let mut conn = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password);
+    let conn = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password);
     
     loop {
         if let Ok(msg) = conn.recv() {
@@ -23,7 +23,7 @@ fn main() {
         }
 
         if let Ok(received) = stdin.try_recv() {
-            conn.send(received);
+            let _ = conn.send(received);
         }
     }
 }
