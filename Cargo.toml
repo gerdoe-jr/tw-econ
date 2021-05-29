@@ -3,6 +3,12 @@ name = "tw-econ"
 version = "0.1.0"
 authors = ["Vlad <gerdoexx@gmail.com>"]
 edition = "2018"
+license = "MIT"
+readme = "README.md"
+keywords = ["teeworlds", "console"]
+categories = ["command-line-interface", "api-bindings"]
+repository = "https://github.com/gerdoe-jr/tw-econ"
+description = "Simple Rust library for using Teeworlds external console"
 
 [dependencies]
 sscanf = "0.1.1"
