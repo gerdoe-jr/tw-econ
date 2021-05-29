@@ -23,7 +23,7 @@ impl EconMessage {
                     content: cnt,
                 })
             },
-            _ => { None }
+            _ => None
         }
     }
 
@@ -52,7 +52,7 @@ impl EconMessage {
         format!("[{}][{}]: {}", self.timestamp, self.category, self.content)
     }
 
-    // requires good stable runtime-formatter
+    // requires a good stable runtime-formatter
     // wish i will find it
     // or do it myself...
     pub fn to_string_fmt(&self, format: String) -> String {
@@ -86,7 +86,6 @@ impl EconConnection {
         let (stx, srx): (Sender<String>, Receiver<String>) = mpsc::channel();
         
         let t = thread::spawn(move || {
-            let tx = tx.clone();
             let addr = address.clone();
             let mut password = password; password.push('\n');
             let mut stream = match TcpStream::connect(addr) {
@@ -100,16 +99,11 @@ impl EconConnection {
                     
                     s.write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
 
-                    let now = Utc::now();
-                    let msg = EconMessage {
-                        timestamp: NaiveTime::from_hms(now.hour(), now.minute(), now.second()),
-                        category: String::from("tw-econ"),
-                        content: format!("Connected to '{}'", addr),
-                    };
+                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Connected to '{}'", addr));
 
                     tx.send(msg).expect(&format!("Can't write streambuffer for address: {:}", addr));
 
-                    s.set_nonblocking(true).expect(&format!("Can't set non-block read for address: {:}", addr));
+                    s.set_nonblocking(true).expect(&format!("Can't set non-blocking mode for address: {:}", addr));
 
                     s
                 },
@@ -120,39 +114,44 @@ impl EconConnection {
                 let mut buffer: [u8; 1024] = [0; 1024];
 
                 match stream.read(&mut buffer) {
-                    Ok(_) => {},
+                    Ok(_) => match std::str::from_utf8(&buffer).unwrap() {
+                        words => {
+                            for word in words.to_string().split('\n') {
+                                let word = word.replace("\u{0}", "");
+                                let msg = match EconMessage::from_string(&word) {
+                                    Some(m) => {
+                                        Some(m)
+                                    },
+                                    _ => {
+                                        if !word.is_empty() {
+                                            Some(EconMessage::from_string_with_current_time(&word))
+                                        }
+                                        else {
+                                            None
+                                        }
+                                    }
+                                };
+
+                                if let Some(m) = msg {
+                                    tx.send(m).expect(&format!("Can't write streambuffer for address: {:}", addr));
+                                }
+                            }
+                        }
+                    },
                     Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
                     Err(_) => {}
                 };
 
-                match std::str::from_utf8(&buffer).unwrap() {
-                    words => {
-                        for word in words.to_string().split('\n') {
-                            let word = word.replace("\u{0}", "");
-                            let msg = match EconMessage::from_string(&word) {
-                                Some(m) => {
-                                    Some(m)
-                                },
-                                _ => {
-                                    if !word.is_empty() {
-                                        Some(EconMessage::from_string_with_current_time(&word))
-                                    }
-                                    else {
-                                        None
-                                    }
-                                }
-                            };
-
-                            if let Some(m) = msg {
-                                tx.send(m).expect(&format!("Can't write streambuffer for address: {:}", addr));
-                            }
-                        }
-                    }
-                }
-
                 if let Ok(received) = srx.try_recv() {
-                    let mut received = received.into_bytes().into_boxed_slice();
-                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                    match received.as_str() {
+                        ":disconnect!" => {
+                            return true;
+                        },
+                        _ => {
+                            let mut received = received.into_bytes().into_boxed_slice();
+                            stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                        }
+                    };
                 }
             }
         });
@@ -167,15 +166,12 @@ impl EconConnection {
     }
 
     pub fn disconnect(&mut self) {
-        // drop connection somehow
-        unimplemented!();
-        // self.messages.push(EconMessage::from_string_with_current_time(format!("[tw-econ]: Disconnected from '{}'", self.address)).unwrap());
+        self.tx.send(String::from(":disconnect!"));
+        self.messages.push(EconMessage::from_string_with_current_time(format!("[tw-econ]: Disconnected from '{}'", self.address)));
     }
 
-    pub fn update(&mut self) {
-        if let Ok(received) = self.rx.try_recv() {
-            self.messages.push(received);
-        }
+    pub fn next(&self) -> Result<EconMessage, mpsc::TryRecvError> {
+        self.rx.try_recv()
     }
 
     pub fn send(&self, command: String) {
