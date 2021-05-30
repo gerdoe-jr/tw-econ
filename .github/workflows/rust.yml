@@ -37,11 +37,11 @@ jobs:
       run: |
         cd target
         cd debug
-        powershell.exe -nologo -noprofile -command "& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::ExtractToDirectory('tw-econ-windows.zip', 'tw-econ.exe'); }"
+        makecab tw-econ.exe tw-econ-windows.zip
         mkdir artifacts
         mv tw-econ-windows.zip artifacts
     - name: Upload Artifacts
       uses: actions/upload-artifact@v1
       with:
-        name: tw-econ-windows.zip
+        name: [tw-econ-windows.zip, tw-econ-linux.tar.xz]
         path: target/debug/artifacts
