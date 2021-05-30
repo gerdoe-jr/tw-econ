@@ -9,7 +9,9 @@ struct Arguments {
     #[structopt(long, default_value = "127.0.0.1:8303")]
     address: String,
     #[structopt(long)]
-    password: String
+    password: String,
+    #[structopt(long)]
+    standard: bool
 }
 
 fn main() {
@@ -19,11 +21,20 @@ fn main() {
     
     loop {
         if let Ok(msg) = conn.recv() {
-            println!("{} : {} ::: {}", msg.get_timestamp(), msg.get_category(), msg.get_content());
+            if args.standard {
+                println!("{}", msg.to_string());
+            }
+            else {
+                println!("{} : {} ::: {}", msg.get_timestamp(), msg.get_category(), msg.get_content());
+            }
         }
 
         if let Ok(received) = stdin.try_recv() {
-            let _ = conn.send(received);
+            let _ = conn.send(received.clone());
+
+            if received == ":q" {
+                conn.disconnect();
+            }
         }
     }
 }

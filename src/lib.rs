@@ -47,7 +47,7 @@ impl EconMessage {
             }
         }
     }
-
+    
     pub fn to_string(&self) -> String {
         format!("[{}][{}]: {}", self.timestamp, self.category, self.content)
     }
@@ -55,9 +55,9 @@ impl EconMessage {
     // requires a good stable runtime-formatter
     // wish i will find it
     // or do it myself...
-    pub fn to_string_fmt(&self, format: String) -> String {
-        unimplemented!();
-    }
+    // pub fn to_string_fmt(&self, format: String) -> String {
+    //     unimplemented!();
+    // }
 
     pub fn get_timestamp(&self) -> NaiveTime {
         self.timestamp
@@ -116,35 +116,36 @@ impl EconConnection {
 
             loop {
                 let mut buffer: [u8; 1024] = [0; 1024];
+                unsafe {
+                    match stream.read(&mut buffer) {
+                        Ok(_) => match std::str::from_utf8_unchecked(&buffer) {
+                            words => {
+                                for word in words.to_string().split('\n') {
+                                    let word = word.replace("\u{0}", "");
+                                    let msg = match EconMessage::from_string(&word) {
+                                        Some(m) => {
+                                            Some(m)
+                                        },
+                                        _ => {
+                                            if !word.is_empty() {
+                                                Some(EconMessage::from_string_with_current_time(&word))
+                                            }
+                                            else {
+                                                None
+                                            }
+                                        }
+                                    };
 
-                match stream.read(&mut buffer) {
-                    Ok(_) => match std::str::from_utf8(&buffer).unwrap() {
-                        words => {
-                            for word in words.to_string().split('\n') {
-                                let word = word.replace("\u{0}", "");
-                                let msg = match EconMessage::from_string(&word) {
-                                    Some(m) => {
-                                        Some(m)
-                                    },
-                                    _ => {
-                                        if !word.is_empty() {
-                                            Some(EconMessage::from_string_with_current_time(&word))
-                                        }
-                                        else {
-                                            None
-                                        }
+                                    if let Some(m) = msg {
+                                        tx.send(m).expect(&format!("Can't write streambuffer for address: {:}", addr));
                                     }
-                                };
-
-                                if let Some(m) = msg {
-                                    tx.send(m).expect(&format!("Can't write streambuffer for address: {:}", addr));
                                 }
                             }
-                        }
-                    },
-                    Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
-                    Err(_) => {}
-                };
+                        },
+                        Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
+                        Err(_) => {}
+                    };
+                }
 
                 if let Ok(received) = srx.try_recv() {
                     match received.as_str() {
@@ -168,7 +169,7 @@ impl EconConnection {
         }
     }
 
-    pub fn disconnect(&mut self) {
+    pub fn disconnect(&self) {
         let _ = self.stx.send(String::from(":disconnect!"));
         let _ = self.tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from '{}'", self.address)));
     }
