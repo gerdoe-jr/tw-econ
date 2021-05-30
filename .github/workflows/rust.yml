@@ -43,5 +43,5 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v1
       with:
-        name: [tw-econ-windows.zip, tw-econ-linux.tar.xz]
+        name: tw-econ-${{ matrix.os }}
         path: target/debug/artifacts
