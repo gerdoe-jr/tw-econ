@@ -44,4 +44,4 @@ jobs:
       uses: actions/upload-artifact@v1
       with:
         name: tw-econ-${{ matrix.os }}
-        path: target/debug/artifacts
+        path: target/release/artifacts
