@@ -15,11 +15,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        include:
-        - os: ubuntu-lastest
-          package-file: tw-econ-inux_x86_64.tar.xz
-        - os: windows-lastest
-          package-file: tw-econ-win64.zip
     steps:
     - uses: actions/checkout@v2
 
@@ -34,11 +29,19 @@ jobs:
       run: |
         cd target
         cd debug
-        tar cf ${{ matrix.package-file }} tw-econ
+        tar cf tw-econ-linux.tar.xz tw-econ
         mkdir artifacts
-        mv ${{ matrix.package-file }} artifacts
+        mv tw-econ-linux.tar.xz artifacts
+    - name: Pack windows
+      if: contains(matrix.os, 'windows')
+      run: |
+        cd target
+        cd debug
+        powershell.exe -nologo -noprofile -command "& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::ExtractToDirectory('tw-econ-windows.zip', 'tw-econ.exe'); }"
+        mkdir artifacts
+        mv tw-econ-windows.zip artifacts
     - name: Upload Artifacts
       uses: actions/upload-artifact@v1
       with:
-        name: tw-econ_${{ matrix.os }}
+        name: tw-econ-windows.zip
         path: target/debug/artifacts
