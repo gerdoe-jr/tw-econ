@@ -29,6 +29,7 @@ jobs:
       run: |
         cd target
         cd debug
+        ls
         tar cf tw-econ-linux.tar.xz tw-econ
         mkdir artifacts
         mv tw-econ-linux.tar.xz artifacts
