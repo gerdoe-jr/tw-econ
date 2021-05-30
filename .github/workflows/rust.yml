@@ -11,12 +11,45 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+        - os: ubuntu-lastest
+          package-file: tw-econ-*-inux_x86_64.tar.xz
+        - os: windows-lastest
+          package-file: tw-econ-*-win64.zip
+    
 
     steps:
     - uses: actions/checkout@v2
+
     - name: Build
       run: cargo build --verbose
+    
     - name: Run tests
       run: cargo test --verbose
+
+    - name: Pack linux
+    if: contains(matrix.os, 'ubuntu')
+      run: | 
+        cd target
+        cd debug
+        tar cf ${{ matrix.package-file }} tw-econ
+        mkdir artifacts
+        mv ${{ matrix.package-file }} artifacts
+
+    - name: Pack windows
+    if: contains(matrix.os, 'windows')
+      run: | 
+        cd target
+        cd debug
+        tar cf ${{ matrix.package-file }} tw-econ.exe
+        mkdir artifacts
+        mv ${{ matrix.package-file }} artifacts
+        
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v1
+      with:
+        name: aniclient-${{ matrix.os }}
+        path: release/artifacts
