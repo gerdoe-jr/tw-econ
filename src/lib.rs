@@ -72,15 +72,10 @@ impl EconMessage {
     }
 }
 
-pub struct EconConnection {
-    address: std::net::SocketAddr,
-    stx: Sender<String>,
-    rx: Receiver<EconMessage>,
-    tx: Sender<EconMessage>,
-}
+pub struct EconConnection;
 
 impl EconConnection {
-    pub fn connect(address: std::net::SocketAddr, password: String) -> Self {
+    pub fn connect(address: std::net::SocketAddr, password: String, disconnect_msg: String) -> (Sender<String>, Receiver<EconMessage>) {
         let (tx, rx): (Sender<EconMessage>, Receiver<EconMessage>) = mpsc::channel();
         let sup_tx = tx.clone();
         let (stx, srx): (Sender<String>, Receiver<String>) = mpsc::channel();
@@ -148,37 +143,17 @@ impl EconConnection {
                 }
 
                 if let Ok(received) = srx.try_recv() {
-                    match received.as_str() {
-                        ":disconnect!" => {
-                            return true;
-                        },
-                        _ => {
-                            let mut received = received.into_bytes().into_boxed_slice();
-                            stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
-                        }
-                    };
+                    if received == disconnect_msg {
+                        let _ = sup_tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from: {:}", addr)));
+                        return true;
+                    }
+
+                    let mut received = received.into_bytes().into_boxed_slice();
+                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
                 }
             }
         });
 
-        EconConnection {
-            address: address,
-            stx,
-            tx: sup_tx,
-            rx,
-        }
-    }
-
-    pub fn disconnect(&self) {
-        let _ = self.stx.send(String::from(":disconnect!"));
-        let _ = self.tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from '{}'", self.address)));
-    }
-
-    pub fn recv(&self) -> Result<EconMessage, mpsc::TryRecvError> {
-        self.rx.try_recv()
-    }
-
-    pub fn send(&self, command: String) -> Result<(), mpsc::SendError<String>> {
-        self.stx.send(command)
+        (stx, rx)
     }
 }
