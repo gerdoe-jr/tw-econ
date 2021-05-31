@@ -173,7 +173,6 @@ impl EconConnection {
         tokio::sync::mpsc::Receiver<EconMessage>) 
     {
         use tokio::net::TcpStream;
-        use tokio::io::AsyncWriteExt;
         use tokio::sync::mpsc::{self};
 
         let (tx, rx) = mpsc::channel::<EconMessage>(100);
@@ -182,8 +181,8 @@ impl EconConnection {
         tokio::spawn(async move {
             let addr = address.clone();
             let mut password = password; password.push('\n');
-            let mut stream = match TcpStream::connect(addr).await {
-                Ok(mut s) => {
+            let stream = match TcpStream::connect(addr).await {
+                Ok(s) => {
                     let mut found = false;
                     while !found {
                         let mut buffer: [u8; 1024] = [0; 1024];
