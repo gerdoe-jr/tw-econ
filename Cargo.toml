@@ -1,6 +1,6 @@
 [package]
 name = "tw-econ"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Vlad <gerdoexx@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -14,3 +14,7 @@ description = "Simple Rust library for using Teeworlds external console"
 sscanf = "0.1.1"
 chrono = "0.4.19"
 structopt = "0.3.21"
+
+[dependencies.tokio]
+version = "1.6.1"
+features = ["rt", "sync", "macros"]
