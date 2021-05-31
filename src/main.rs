@@ -17,10 +17,10 @@ struct Arguments {
 fn main() {
     let args = Arguments::from_args();
     let stdin = spawn_stdin_channel();
-    let (cmd_send, msg_recv) = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password, String::from(":q!"));
+    let (cmd, msg) = lib::EconConnection::connect(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password, String::from(":q!"));
     
     loop {
-        if let Ok(msg) = msg_recv.try_recv() {
+        if let Ok(msg) = msg.try_recv() {
             if args.standard {
                 println!("{}", msg.to_string());
             }
@@ -30,7 +30,7 @@ fn main() {
         }
 
         if let Ok(received) = stdin.try_recv() {
-            let _ = cmd_send.send(received);
+            let _ = cmd.send(received);
         }
     }
 }
