@@ -75,7 +75,7 @@ impl EconMessage {
 pub struct EconConnection;
 
 impl EconConnection {
-    pub fn connect(address: std::net::SocketAddr, password: String, disconnect_msg: String) -> (Sender<String>, Receiver<EconMessage>) {
+    pub fn connect(address: std::net::SocketAddr, password: String, disconnect_msg: String) -> (Sender<String>, Receiver<EconMessage>)  {
         let (tx, rx): (Sender<EconMessage>, Receiver<EconMessage>) = mpsc::channel();
         let sup_tx = tx.clone();
         let (stx, srx): (Sender<String>, Receiver<String>) = mpsc::channel();
@@ -155,5 +155,9 @@ impl EconConnection {
         });
 
         (stx, rx)
+    }
+
+    pub async fn connect_async(address: std::net::SocketAddr, password: String, disconnect_msg: String) -> (Sender<String>, Receiver<EconMessage>) {
+        async move { EconConnection::connect(address, password, disconnect_msg) }.await
     }
 }
