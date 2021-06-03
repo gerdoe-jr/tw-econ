@@ -1,6 +1,6 @@
 [package]
 name = "tw-econ"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Vlad <gerdoexx@gmail.com>"]
 edition = "2018"
 license = "MIT"
