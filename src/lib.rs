@@ -1,5 +1,6 @@
 use std::net::TcpStream;
 use std::io::prelude::*;
+use futures::FutureExt;
 use std::thread;
 
 use chrono::{NaiveTime, Timelike, Utc};
@@ -238,7 +239,7 @@ impl EconConnection {
                     };
                 }
 
-                if let Some(received) = srx.recv().await {
+                if let Some(Some(received)) = srx.recv().now_or_never() {
                     if received == disconnect_msg {
                         let _ = tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from: {:}", addr)));
                     }
