@@ -182,8 +182,8 @@ impl EconConnection {
         tokio::spawn(async move {
             let addr = address.clone();
             let mut password = password; password.push('\n');
-            let stream = match TcpStream::connect(addr) {
-                Ok(s) => {
+            let mut stream = match TcpStream::connect(addr) {
+                Ok(mut s) => {
                     let mut found = false;
                     while !found {
                         let mut buffer: [u8; 1024] = [0; 1024];
