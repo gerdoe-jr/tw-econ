@@ -173,25 +173,25 @@ impl EconConnection {
         (tokio::sync::mpsc::Sender<String>, 
         tokio::sync::mpsc::Receiver<EconMessage>) 
     {
-        //use tokio::net::TcpStream;
+        use tokio::net::TcpStream;
         use tokio::sync::mpsc::{self};
 
         let (tx, rx) = mpsc::channel::<EconMessage>(100);
         let (stx, mut srx) = mpsc::channel::<String>(100);
         
-        tokio::spawn(async move {
+        let _ = tokio::spawn(async move {
             let addr = address.clone();
             let mut password = password; password.push('\n');
-            let mut stream = match TcpStream::connect(addr) {
+            let mut stream = match TcpStream::connect(addr).await {
                 Ok(mut s) => {
                     let mut found = false;
                     while !found {
                         let mut buffer: [u8; 1024] = [0; 1024];
-                        s.read(&mut buffer).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                        s.try_read(&mut buffer).expect(&format!("Can't read streambuffer for address: {:}", addr));
                         found = std::str::from_utf8(&buffer).unwrap().contains("Enter password:");
                     }
                     
-                    s.write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
+                    s.try_write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
 
                     let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Connected to '{}'", addr));
 
@@ -209,7 +209,7 @@ impl EconConnection {
             loop {
                 let mut buffer: [u8; 1024] = [0; 1024];
                 unsafe {
-                    match stream.read(&mut buffer) {
+                    match stream.try_read(&mut buffer) {
                         Ok(_) => match std::str::from_utf8_unchecked(&buffer) {
                             words => {
                                 for word in words.to_string().split('\n') {
@@ -245,10 +245,10 @@ impl EconConnection {
                     }
 
                     let mut received = received.into_bytes().into_boxed_slice();
-                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                    stream.try_write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
                 }
             }
-        });
+        }).await;
 
         (stx, rx)
     }
