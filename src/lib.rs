@@ -182,8 +182,8 @@ impl EconConnection {
         let _ = tokio::spawn(async move {
             let addr = address.clone();
             let mut password = password; password.push('\n');
-            let mut stream = match TcpStream::connect(addr).await {
-                Ok(mut s) => {
+            let stream = match TcpStream::connect(addr).await {
+                Ok(s) => {
                     let mut found = false;
                     while !found {
                         let mut buffer: [u8; 1024] = [0; 1024];
@@ -202,7 +202,7 @@ impl EconConnection {
                 _ => {
                     let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Can't connect to '{}'", addr));
                     tx.send(msg).await.expect(&format!("Can't write streambuffer for address: {:}", addr));
-                    return false;
+                    return;
                 }
             };
 
@@ -243,8 +243,9 @@ impl EconConnection {
                     if received == disconnect_msg {
                         let _ = tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from: {:}", addr)));
                     }
-
                     let mut received = received.into_bytes().into_boxed_slice();
+
+                    stream.writable().await.unwrap();
                     stream.try_write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
                 }
             }
