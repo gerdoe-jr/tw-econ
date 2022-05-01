@@ -1,9 +1,17 @@
-use std::net::TcpStream;
-use std::io::prelude::*;
-use futures::FutureExt;
-use std::thread;
+use std::net::SocketAddr;
+use std::sync::{Mutex, Arc};
+use tokio::net::TcpStream;
+use chrono::{NaiveTime, Utc};
+use std::thread::JoinHandle;
 
-use chrono::{NaiveTime, Timelike, Utc};
+
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum EconError {
+    #[error("Wrong password.")]
+    WrongPassword,
+    #[error("No response.")]
+    NoResponse
+}
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -14,50 +22,44 @@ pub struct EconMessage {
 }
 
 impl EconMessage {
-    pub fn from_string(msg: &String) -> Option<Self> {
-        match sscanf::scanf!(msg.clone(), "[{}][{}]: {}", String, String, String) {
+    pub fn new<T: Into<NaiveTime>, S: Into<String>>(timestamp: T, category: S, content: S) -> Self {
+        Self {
+            timestamp: timestamp.into(),
+            category: category.into(),
+            content: content.into(),
+        }
+    }
+
+    pub fn from_string<S: Into<String>>(msg: S) -> Option<Self> {
+        match sscanf::scanf!(msg.into(), "[{}][{}]: {}", String, String, String) {
             Some((utc, ctg, cnt)) => {
-                Some(EconMessage {
-                    timestamp: NaiveTime::parse_from_str(&utc, "%H:%M:%S").unwrap(),
-                    category: ctg,
-                    content: cnt,
-                })
+                Some(Self::new(
+                    NaiveTime::parse_from_str(&utc, "%H:%M:%S").unwrap(),
+                    ctg,
+                    cnt,
+                ))
             },
             _ => None
         }
     }
 
-    pub fn from_string_with_current_time(msg: &String) -> Self {
-        let now = Utc::now();
-        
-        match sscanf::scanf!(msg.clone(), "[{}]: {}", String, String) {
-            Some((ctg, cnt)) => {
-                EconMessage {
-                    timestamp: NaiveTime::from_hms(now.hour(), now.minute(), now.second()),
-                    category: ctg,
-                    content: cnt,
-                }
-            },
-            _ => {
-                EconMessage {
-                    timestamp: NaiveTime::from_hms(now.hour(), now.minute(), now.second()),
-                    category: String::from("tw-econ"),
-                    content: msg.to_string(),
-                }
-            }
-        }
-    }
-    
-    pub fn to_string(&self) -> String {
-        format!("[{}][{}]: {}", self.timestamp, self.category, self.content)
+    pub fn set_timestamp<T: Into<NaiveTime>>(&mut self, value: T) -> &Self {
+        self.timestamp = value.into();
+
+        self
     }
 
-    // requires a good stable runtime-formatter
-    // wish i will find it
-    // or do it myself...
-    // pub fn to_string_fmt(&self, format: String) -> String {
-    //     unimplemented!();
-    // }
+    pub fn set_category<S: Into<String>>(&mut self, value: S) -> &Self {
+        self.category = value.into();
+
+        self
+    }
+
+    pub fn set_content<S: Into<String>>(&mut self, value: S) -> &Self {
+        self.content = value.into();
+
+        self
+    }
 
     pub fn get_timestamp(&self) -> NaiveTime {
         self.timestamp
@@ -72,155 +74,85 @@ impl EconMessage {
     }
 }
 
-pub struct EconConnection;
+pub struct EconConnection {
+    stream: Arc<Mutex<TcpStream>>,
+
+    vec_in: Arc<Mutex<Vec<String>>>,
+    vec_out: Arc<Mutex<Vec<EconMessage>>>,
+
+    connected: Arc<Mutex<bool>>
+}
 
 impl EconConnection {
-    pub fn connect(address: std::net::SocketAddr, 
-        password: String, 
-        disconnect_msg: String) 
-        -> 
-        (std::sync::mpsc::Sender<String>, 
-        std::sync::mpsc::Receiver<EconMessage>) 
+    pub async fn new<N: Into<SocketAddr>, S: Into<String>>(address: N, password: S) -> Result<Self, EconError>
     {
-        use std::sync::mpsc::{self};
-        let (tx, rx) = mpsc::channel::<EconMessage>();
-        let sup_tx = tx.clone();
-        let (stx, srx) = mpsc::channel::<String>();
-        
-        thread::spawn(move || {
-            let addr = address.clone();
-            let mut password = password; password.push('\n');
-            let mut stream = match TcpStream::connect(addr) {
-                Ok(mut s) => {
-                    let mut found = false;
-                    while !found {
-                        let mut buffer: [u8; 1024] = [0; 1024];
-                        s.read(&mut buffer).expect(&format!("Can't read streambuffer for address: {:}", addr));
-                        found = std::str::from_utf8(&buffer).unwrap().contains("Enter password:");
-                    }
-                    
-                    s.write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
+        let vec_in = Vec::new();
+        let mut vec_out = Vec::new();
 
-                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Connected to '{}'", addr));
+        let address = address.into();
+        let password = password.into() + "\n";
 
-                    tx.send(msg).expect(&format!("Can't write streambuffer for address: {:}", addr));
+        let stream = match TcpStream::connect(address).await {
+            Ok(s) => {
 
-                    s.set_nonblocking(true).expect(&format!("Can't set non-blocking mode for address: {:}", addr));
-
-                    s
-                },
-                _ => {
-                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Can't connect to '{}'", addr));
-
-                    tx.send(msg).expect(&format!("Can't write streambuffer for address: {:}", addr));
-
-                    return false;
-                }
-            };
-
-            loop {
                 let mut buffer: [u8; 1024] = [0; 1024];
-                unsafe {
-                    match stream.read(&mut buffer) {
-                        Ok(_) => match std::str::from_utf8_unchecked(&buffer) {
-                            words => {
-                                for word in words.to_string().split('\n') {
-                                    let word = word.replace("\u{0}", "");
-                                    let msg = match EconMessage::from_string(&word) {
-                                        Some(m) => {
-                                            Some(m)
-                                        },
-                                        _ => {
-                                            if !word.is_empty() {
-                                                Some(EconMessage::from_string_with_current_time(&word))
-                                            }
-                                            else {
-                                                None
-                                            }
-                                        }
-                                    };
 
-                                    if let Some(m) = msg {
-                                        tx.send(m).expect(&format!("Can't write streambuffer for address: {:}", addr));
-                                    }
-                                }
-                            }
-                        },
-                        Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
-                        Err(_) => {}
-                    };
+                let size = s.try_read(&mut buffer).unwrap();
+                if !std::str::from_utf8(&buffer[..size]).unwrap().contains("Enter") {
+                    return Err(EconError::NoResponse);
                 }
 
-                if let Ok(received) = srx.try_recv() {
-                    if received == disconnect_msg {
-                        let _ = sup_tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from: {:}", addr)));
-                        return true;
-                    }
+                s.try_write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", address));
 
-                    let mut received = received.into_bytes().into_boxed_slice();
-                    stream.write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                let size = s.try_read(&mut buffer).unwrap();
+                if std::str::from_utf8(&buffer[..size]).unwrap().contains("Wrong") {
+                    return Err(EconError::WrongPassword);
                 }
+
+                let msg = EconMessage::new(
+                    Utc::now().time(),
+                    "tw-econ",
+                    &format!("Connected to '{}'", address)
+                );
+
+                vec_out.push(msg);
+
+                s
+            },
+            _ => {
+                return Err(EconError::NoResponse);
             }
-        });
+        };
 
-        (stx, rx)
+        Ok(Self {
+            stream: Arc::new(Mutex::new(stream)),
+            vec_in: Arc::new(Mutex::new(vec_in)),
+            vec_out: Arc::new(Mutex::new(vec_out)),
+            connected: Arc::new(Mutex::new(true)),
+        })
     }
 
-    pub async fn connect_async(address: std::net::SocketAddr, 
-        password: String, 
-        disconnect_msg: String) 
-        -> 
-        (tokio::sync::mpsc::Sender<String>, 
-        tokio::sync::mpsc::Receiver<EconMessage>) 
-    {
-        use tokio::net::TcpStream;
-        use tokio::sync::mpsc::{self};
+    pub async fn connect(&self) -> tokio::task::JoinHandle<()> {
+        let stream = self.stream.as_ref();
+        let vec_in = self.vec_in.as_ref();
+        let vec_out = self.vec_out.as_ref();
+        let connected = self.connected.as_ref();
 
-        let (tx, rx) = mpsc::channel::<EconMessage>(100);
-        let (stx, mut srx) = mpsc::channel::<String>(100);
-        
-        let _ = tokio::spawn(async move {
-            let addr = address.clone();
-            let mut password = password; password.push('\n');
-            let stream = match TcpStream::connect(addr).await {
-                Ok(s) => {
-                    let mut found = false;
-                    while !found {
-                        let mut buffer: [u8; 1024] = [0; 1024];
-                        s.try_read(&mut buffer).expect(&format!("Can't read streambuffer for address: {:}", addr));
-                        found = std::str::from_utf8(&buffer).unwrap().contains("Enter password:");
-                    }
-                    
-                    s.try_write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", addr));
-
-                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Connected to '{}'", addr));
-
-                    tx.send(msg).await.expect(&format!("Can't write streambuffer for address: {:}", addr));
-
-                    s
-                },
-                _ => {
-                    let msg = EconMessage::from_string_with_current_time(&format!("[tw-econ]: Can't connect to '{}'", addr));
-                    tx.send(msg).await.expect(&format!("Can't write streambuffer for address: {:}", addr));
-                    return;
-                }
-            };
-
-            loop {
-                let mut buffer: [u8; 1024] = [0; 1024];
+        tokio::spawn(async move {
+            while *connected.lock().unwrap() {
+                let mut buffer: [u8; 4096] = [0; 4096];
                 unsafe {
-                    match stream.try_read(&mut buffer) {
-                        Ok(_) => match std::str::from_utf8_unchecked(&buffer) {
+                    match stream.lock().unwrap().try_read(&mut buffer) {
+                        Ok(size) => match std::str::from_utf8_unchecked(&buffer[..size]) {
                             words => {
                                 for word in words.to_string().split('\n') {
-                                    let word = word.replace("\u{0}", "");
-                                    let msg = match EconMessage::from_string(&word) {
+                                    let msg = match EconMessage::from_string(word) {
                                         Some(m) => {
                                             Some(m)
                                         },
                                         _ => {
                                             if !word.is_empty() {
-                                                Some(EconMessage::from_string_with_current_time(&word))
+                                                Some(EconMessage::new(Utc::now().time(), "tw-econ", &word))
                                             }
                                             else {
                                                 None
@@ -229,28 +161,34 @@ impl EconConnection {
                                     };
 
                                     if let Some(m) = msg {
-                                        tx.send(m).await.expect(&format!("Can't write streambuffer for address: {:}", addr));
+                                        vec_out.lock().unwrap().push(m);
                                     }
                                 }
                             }
                         },
                         Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {},
-                        Err(_) => {}
+                        _ => {}
                     };
                 }
 
-                if let Some(Some(received)) = srx.recv().now_or_never() {
-                    if received == disconnect_msg {
-                        let _ = tx.send(EconMessage::from_string_with_current_time(&format!("[tw-econ]: Disconnected from: {:}", addr)));
-                    }
+                if let Some(received) = vec_in.lock().unwrap().pop() {
                     let mut received = received.into_bytes().into_boxed_slice();
 
-                    stream.writable().await.unwrap();
-                    stream.try_write(&mut received).expect(&format!("Can't read streambuffer for address: {:}", addr));
+                    stream.lock().unwrap().try_write(&mut received).expect("Can't read streambuffer");
                 }
             }
-        }).await;
+        })
+    }
 
-        (stx, rx)
+    pub async fn disconnect(&mut self) {
+        *self.connected.as_ref().lock().unwrap() = true;
+    }
+
+    pub async fn send_message<S: Into<String>>(&self, message: S) {
+        self.vec_in.as_ref().lock().unwrap().push(message.into());
+    }
+
+    pub async fn recv_message(&self) -> Option<EconMessage> {
+        self.vec_out.as_ref().lock().unwrap().pop()
     }
 }
