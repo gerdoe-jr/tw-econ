@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
-use std::sync::{Mutex, Arc};
 use tokio::net::TcpStream;
+
+use std::sync::{Mutex, Arc};
 use chrono::{NaiveTime, Utc};
-use std::thread::JoinHandle;
 
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -97,14 +97,28 @@ impl EconConnection {
 
                 let mut buffer: [u8; 1024] = [0; 1024];
 
-                let size = s.try_read(&mut buffer).unwrap();
+                let mut size = 0;
+
+                while let Err(_) = s.try_read(&mut buffer) {
+                    if let Ok(out) = s.try_read(&mut buffer) {
+                        size = out;
+                        break;
+                    }
+                };
+
                 if !std::str::from_utf8(&buffer[..size]).unwrap().contains("Enter") {
                     return Err(EconError::NoResponse);
                 }
 
                 s.try_write(password.as_bytes()).expect(&format!("Can't send password for address: {:}", address));
 
-                let size = s.try_read(&mut buffer).unwrap();
+                while let Err(_) = s.try_read(&mut buffer) {
+                    if let Ok(out) = s.try_read(&mut buffer) {
+                        size = out;
+                        break;
+                    }
+                };
+
                 if std::str::from_utf8(&buffer[..size]).unwrap().contains("Wrong") {
                     return Err(EconError::WrongPassword);
                 }
@@ -133,10 +147,10 @@ impl EconConnection {
     }
 
     pub async fn connect(&self) -> tokio::task::JoinHandle<()> {
-        let stream = self.stream.as_ref();
-        let vec_in = self.vec_in.as_ref();
-        let vec_out = self.vec_out.as_ref();
-        let connected = self.connected.as_ref();
+        let stream = Arc::clone(&self.stream);
+        let vec_in = Arc::clone(&self.vec_in);
+        let vec_out = Arc::clone(&self.vec_out);
+        let connected = Arc::clone(&self.connected);
 
         tokio::spawn(async move {
             while *connected.lock().unwrap() {
@@ -145,19 +159,15 @@ impl EconConnection {
                     match stream.lock().unwrap().try_read(&mut buffer) {
                         Ok(size) => match std::str::from_utf8_unchecked(&buffer[..size]) {
                             words => {
-                                for word in words.to_string().split('\n') {
-                                    let msg = match EconMessage::from_string(word) {
-                                        Some(m) => {
-                                            Some(m)
-                                        },
-                                        _ => {
-                                            if !word.is_empty() {
-                                                Some(EconMessage::new(Utc::now().time(), "tw-econ", &word))
-                                            }
-                                            else {
-                                                None
-                                            }
+                                for word in words.to_string().replace('\0', "").split('\n') {
+                                    let msg = if !word.is_empty() {
+                                        match EconMessage::from_string(word) {
+                                            Some(m) => Some(m),
+                                            _ => Some(EconMessage::new(Utc::now().time(), "tw-econ", &word))
                                         }
+                                    }
+                                    else {
+                                        None
                                     };
 
                                     if let Some(m) = msg {
@@ -181,7 +191,7 @@ impl EconConnection {
     }
 
     pub async fn disconnect(&mut self) {
-        *self.connected.as_ref().lock().unwrap() = true;
+        *self.connected.as_ref().lock().unwrap() = false;
     }
 
     pub async fn send_message<S: Into<String>>(&self, message: S) {

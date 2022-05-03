@@ -21,7 +21,7 @@ async fn main() {
     
     loop {
         if let Some(msg) = &conn.recv_message().await {
-            println!("{} : {} ::: {}", msg.get_timestamp(), msg.get_category(), msg.get_content());
+            println!("{} : {} ::: {}", msg.get_timestamp().format("%H:%M:%S").to_string(), msg.get_category(), msg.get_content());
         }
 
         if let Ok(received) = stdin.try_recv() {
