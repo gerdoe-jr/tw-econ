@@ -12,4 +12,4 @@ $ cargo run
 ```
 
 ## Examples
-You can have a look at [econ-tui](https://github.com/gerdoe-jr/econ-tui)
+You can have a look at [tw-econ-tui](https://github.com/gerdoe-jr/tw-econ-tui)
