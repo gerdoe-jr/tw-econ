@@ -1,45 +1,67 @@
-mod lib;
+/* 
+    Move this section into separate crate
+    tw-econ is library, not the toolbox
+ */
 
-use structopt::StructOpt;
-use std::sync::mpsc::{self, Receiver};
+use std::io;
+use std::sync::{
+    mpsc::{self, Receiver, TryRecvError},
+    Arc, Mutex
+};
+use std::net::SocketAddr;
+use std::thread;
+
+use tw_econ::connection::*;
+
+fn main() {
+    let stdin_channel = spawn_stdin_channel();
+
+    let connection: Arc<Mutex<Connection<1024, 16>>> = Arc::new(Mutex::new(Connection::new()));
+
+    println!("Enter server address (don't forget about ec_port): ");
+    let address = stdin_channel.recv().unwrap();
+
+    connection.lock().unwrap().launch(address.parse::<SocketAddr>().unwrap()).unwrap();
+
+    let connection_channel = spawn_connection_channel(connection.clone());
 
 
-#[derive(Debug, StructOpt)]
-struct Arguments {
-    #[structopt(long, default_value = "127.0.0.1:8303")]
-    address: String,
-    #[structopt(long)]
-    password: String,
-}
-
-#[tokio::main]
-async fn main() {
-    let args = Arguments::from_args();
-    let stdin = spawn_stdin_channel();
-    let conn = lib::EconConnection::new(args.address.parse::<std::net::SocketAddr>().unwrap(), args.password).await.unwrap();
-    conn.connect().await;
-    
     loop {
-        if let Some(msg) = &conn.recv_message().await {
-            println!("{} : {} ::: {}", msg.get_timestamp().format("%H:%M:%S").to_string(), msg.get_category(), msg.get_content());
+        match stdin_channel.try_recv() {
+            Ok(key) => connection.lock().unwrap().send(key).unwrap(),
+            Err(TryRecvError::Empty) => {},
+            Err(TryRecvError::Disconnected) => panic!("stdin receiver hang up"),
         }
 
-        if let Ok(received) = stdin.try_recv() {
-            conn.send_message(received).await;
+        match connection_channel.try_recv() {
+            Ok(key) => println!("{}", key),
+            Err(TryRecvError::Empty) => {},
+            Err(TryRecvError::Disconnected) => panic!("conn receiver hang up"),
         }
     }
+
+}
+
+fn spawn_connection_channel<const T: usize, const TT: usize>(connection: Arc<Mutex<Connection<T, TT>>>) -> Receiver<String> {
+    let (tx, rx) = mpsc::channel::<String>();
+    thread::spawn(move || {
+        let connection = connection.clone();
+        loop {
+            if let Ok(received) = connection.lock().unwrap().recv() {
+                tx.send(received).unwrap();
+            }
+        }
+    });
+    rx
 }
 
 fn spawn_stdin_channel() -> Receiver<String> {
     let (tx, rx) = mpsc::channel::<String>();
-
-    std::thread::spawn(move || loop {
+    thread::spawn(move || loop {
         let mut buffer = String::new();
-
-        std::io::stdin().read_line(&mut buffer).unwrap();
-
+        io::stdin().read_line(&mut buffer).unwrap();
+        let buffer = buffer.trim_end().to_string();
         tx.send(buffer).unwrap();
     });
-
     rx
 }
