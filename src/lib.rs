@@ -1,2 +1,5 @@
-pub mod connection;
-pub mod error;
+mod raw;
+mod econ;
+
+pub use econ::Econ;
+
