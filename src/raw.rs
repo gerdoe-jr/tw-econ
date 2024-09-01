@@ -16,13 +16,14 @@ impl EconRaw {
         buffer_size: usize,
         timeout_secs: u64,
     ) -> std::io::Result<Self> {
+        let buffer = vec![0u8; buffer_size];
         let address = address.into();
 
         let connection = TcpStream::connect_timeout(&address, Duration::from_secs(timeout_secs))?;
 
         Ok(Self {
             socket: connection,
-            buffer: Vec::with_capacity(buffer_size),
+            buffer,
             lines: Vec::new(),
             unfinished_line: String::new(),
             authed: false,
