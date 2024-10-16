@@ -8,6 +8,7 @@ pub struct EconRaw {
     lines: Vec<String>,
     unfinished_line: String,
     authed: bool,
+    auth_message: String,
 }
 
 impl EconRaw {
@@ -27,11 +28,16 @@ impl EconRaw {
             lines: Vec::new(),
             unfinished_line: String::new(),
             authed: false,
+            auth_message: "Authentication successful".to_string()
         })
     }
 
     pub fn disconnect(&mut self) -> std::io::Result<()> {
         self.socket.shutdown(Shutdown::Both)
+    }
+
+    pub fn set_auth_message(&mut self, auth_message: String) {
+        self.auth_message = auth_message
     }
 
     pub fn auth(&mut self, password: &str) -> std::io::Result<bool> {
@@ -43,7 +49,7 @@ impl EconRaw {
         self.read()?;
 
         while let Some(line) = self.pop_line() {
-            if line.starts_with("Authentication successful") {
+            if line.starts_with(self.auth_message.as_str()) {
                 self.authed = true;
             }
         }
