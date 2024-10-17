@@ -2,13 +2,14 @@ use std::net::SocketAddr;
 
 use crate::raw::EconRaw;
 
+#[derive(Default)]
 pub struct Econ {
     raw: Option<EconRaw>,
 }
 
 impl Econ {
     pub fn new() -> Self {
-        Self { raw: None }
+        Self::default()
     }
 
     /// Connects to given address
@@ -38,7 +39,12 @@ impl Econ {
 
         let raw = self.raw.as_mut().unwrap();
 
-        Ok(raw.auth(password.into().as_str())?)
+        raw.auth(password.into().as_str())
+    }
+
+    /// Change auth message
+    pub fn set_auth_message<T: ToString>(&mut self, auth_message: T) {
+        self.raw.as_mut().unwrap().set_auth_message(auth_message.to_string());
     }
 
     /// Blocking *write* operation, sends line to socket
@@ -69,7 +75,7 @@ impl Econ {
 
         let raw = self.raw.as_mut().unwrap();
 
-        if fetch == true {
+        if fetch {
             assert!(
                 raw.is_authed(),
                 "you can't fetch lines without being authed"
