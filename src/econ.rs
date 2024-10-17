@@ -43,8 +43,8 @@ impl Econ {
     }
 
     /// Change auth message
-    pub fn set_auth_message(&mut self, auth_message: String) {
-        self.raw.as_mut().unwrap().set_auth_message(auth_message)
+    pub fn set_auth_message<T: ToString>(&mut self, auth_message: T) {
+        self.raw.as_mut().unwrap().set_auth_message(auth_message.to_string());
     }
 
     /// Blocking *write* operation, sends line to socket
