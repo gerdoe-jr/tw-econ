@@ -1,10 +1,11 @@
-use std::net::SocketAddr;
+use std::{io::ErrorKind, net::SocketAddr};
 
 use crate::raw::EconRaw;
 
 #[derive(Default)]
 pub struct Econ {
     raw: Option<EconRaw>,
+    is_alive: bool,
 }
 
 impl Econ {
@@ -16,74 +17,93 @@ impl Econ {
     pub fn connect(&mut self, address: impl Into<SocketAddr>) -> std::io::Result<()> {
         self.raw = Some(EconRaw::connect(address, 2048, 5)?);
 
+        self.is_alive = true;
+
         Ok(())
     }
 
-    pub fn disconnect(&mut self) -> std::io::Result<()> {
+    pub fn reconnect(&mut self) -> std::io::Result<()> {
         assert!(
-            self.raw.is_some(),
-            "you can't disconnect without being connected"
+            self.raw.is_some() && !self.is_alive,
+            "can't reconnect without being disconnected"
         );
 
-        let raw = self.raw.as_mut().unwrap();
+        let raw = unsafe { self.raw.as_mut().unwrap_unchecked() };
+
+        raw.reconnect()
+    }
+
+    pub fn disconnect(&mut self) -> std::io::Result<()> {
+        let raw = self.get_raw_mut();
 
         raw.disconnect()
     }
 
     /// Tries to authenticate, returns `false` if password is incorrect`
     pub fn try_auth(&mut self, password: impl Into<String>) -> std::io::Result<bool> {
-        assert!(
-            self.raw.is_some(),
-            "you can't authenticate without being connected"
-        );
-
-        let raw = self.raw.as_mut().unwrap();
+        let raw = self.get_raw_mut();
 
         raw.auth(password.into().as_str())
     }
 
     /// Change auth message
     pub fn set_auth_message<T: ToString>(&mut self, auth_message: T) {
-        self.raw.as_mut().unwrap().set_auth_message(auth_message.to_string());
+        let raw = self.get_raw_mut();
+
+        raw.set_auth_message(auth_message.to_string());
     }
 
     /// Blocking *write* operation, sends line to socket
     pub fn send_line(&mut self, line: impl Into<String>) -> std::io::Result<()> {
-        assert!(
-            self.raw.is_some(),
-            "you can't send commands without being connected"
-        );
-
-        let raw = self.raw.as_mut().unwrap();
+        let raw = self.get_raw_mut();
 
         assert!(
             raw.is_authed(),
-            "you can't send commands without being authed"
+            "can't send commands without being authed"
         );
 
         raw.send(line.into().as_str())
     }
 
     /// Blocking *read* operation, reads to buffer and appends to inner line buffer
-    /// if fetch set to `true`, otherwise returns popped line from line buffer
-    /// with no another operation
-    pub fn recv_line(&mut self, fetch: bool) -> std::io::Result<Option<String>> {
+    pub fn fetch(&mut self) -> std::io::Result<()> {
+        let raw = self.get_raw_mut();
+
         assert!(
-            self.raw.is_some(),
-            "you can't fetch lines without being connected"
+            raw.is_authed(),
+            "can't fetch lines without being authed"
         );
 
-        let raw = self.raw.as_mut().unwrap();
+        match raw.read() {
+            Err(error) => {
+                if error.kind() == ErrorKind::ConnectionAborted {
+                    self.is_alive = false;
+                    return Err(error);
+                }
 
-        if fetch {
-            assert!(
-                raw.is_authed(),
-                "you can't fetch lines without being authed"
-            );
-
-            raw.read()?;
+                Err(error)
+            }
+            _ => Ok(()),
         }
+    }
+
+    pub fn pop_line(&mut self) -> std::io::Result<Option<String>> {
+        let raw = self.get_raw_mut();
+
+        assert!(
+            raw.is_authed(),
+            "can't fetch lines without being authed"
+        );
 
         Ok(raw.pop_line())
+    }
+
+    fn get_raw_mut(&mut self) -> &mut EconRaw {
+        assert!(
+            self.raw.is_some() && self.is_alive,
+            "can't do anything without being connected"
+        );
+
+        unsafe { self.raw.as_mut().unwrap_unchecked() }
     }
 }

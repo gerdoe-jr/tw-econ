@@ -9,6 +9,7 @@ pub struct EconRaw {
     unfinished_line: String,
     authed: bool,
     auth_message: String,
+    timeout_secs: u64,
 }
 
 impl EconRaw {
@@ -28,8 +29,18 @@ impl EconRaw {
             lines: Vec::new(),
             unfinished_line: String::new(),
             authed: false,
-            auth_message: "Authentication successful".to_string()
+            auth_message: "Authentication successful".to_string(),
+            timeout_secs,
         })
+    }
+
+    pub fn reconnect(&mut self) -> std::io::Result<()> {
+        self.socket = TcpStream::connect_timeout(
+            &self.socket.peer_addr().unwrap(),
+            Duration::from_secs(self.timeout_secs),
+        )?;
+
+        Ok(())
     }
 
     pub fn disconnect(&mut self) -> std::io::Result<()> {
@@ -37,13 +48,10 @@ impl EconRaw {
     }
 
     pub fn set_auth_message(&mut self, auth_message: String) {
-        self.auth_message = auth_message
+        self.auth_message = auth_message;
     }
 
     pub fn auth(&mut self, password: &str) -> std::io::Result<bool> {
-        self.read()?;
-        self.lines.clear();
-
         self.send(password)?;
 
         self.read()?;
