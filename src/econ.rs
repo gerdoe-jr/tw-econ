@@ -57,10 +57,7 @@ impl Econ {
     pub fn send_line(&mut self, line: impl Into<String>) -> std::io::Result<()> {
         let raw = self.get_raw_mut();
 
-        assert!(
-            raw.is_authed(),
-            "can't send commands without being authed"
-        );
+        assert!(raw.is_authed(), "can't send commands without being authed");
 
         raw.send(line.into().as_str())
     }
@@ -69,10 +66,7 @@ impl Econ {
     pub fn fetch(&mut self) -> std::io::Result<()> {
         let raw = self.get_raw_mut();
 
-        assert!(
-            raw.is_authed(),
-            "can't fetch lines without being authed"
-        );
+        assert!(raw.is_authed(), "can't fetch lines without being authed");
 
         match raw.read() {
             Err(error) => {
@@ -90,12 +84,13 @@ impl Econ {
     pub fn pop_line(&mut self) -> std::io::Result<Option<String>> {
         let raw = self.get_raw_mut();
 
-        assert!(
-            raw.is_authed(),
-            "can't fetch lines without being authed"
-        );
+        assert!(raw.is_authed(), "can't fetch lines without being authed");
 
         Ok(raw.pop_line())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.is_alive
     }
 
     fn get_raw_mut(&mut self) -> &mut EconRaw {
