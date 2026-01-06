@@ -1,11 +1,12 @@
 # tw-econ
 
 ## Description
+
 Rust library provides you a simple synchronous interface to interconnect with Teeworlds external console.
 
 ## Example
 
-Let's say you have Teeworlds server running with `ec_password zohan` and `ec_port 6060` and you want to use it's econ. 
+Let's say you have Teeworlds server running with `ec_password zohan` and `ec_port 6060` and you want to use it's econ.
 
 ```rust
 use tw_econ::Econ;
@@ -25,12 +26,15 @@ fn main() -> std::io::Result<()> {
     assert_eq!(authed, true);
 
     econ.send_line("echo \"Hi\"")?;
+
+    econ.fetch()?;
     
-    println!("{}", econ.recv_line(true)?);
+    println!("{}", econ.pop_line()?);
 
     Ok(())
 }
 ```
 
 ## Projects
+
 * [tw-econ-tui](https://github.com/gerdoe-jr/tw-econ-tui)
